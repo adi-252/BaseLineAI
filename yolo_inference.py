@@ -2,7 +2,7 @@ from ultralytics import YOLO;
 
 model = YOLO("yolov8n.pt")
 
-result = model.predict('input_videos/input_video.mp4', save = True)
+result = model.predict('input_videos/input_video.mp4', save = True, project="prediction", name="output")
 print(result)
 
 print("Boxes:")
