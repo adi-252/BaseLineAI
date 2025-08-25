@@ -1,6 +1,8 @@
-# Tennis Analysis AI (Computer Vision)
+# BaseLine AI- CV Tennis Analysis Tool 
 
 End-to-end tennis analysis with player & ball tracking, court detection, homography, and mini-court overlays.
+
+Incomplete with changes being rolled out weekly.
 
 ## Features
 - YOLO-based player/ball detection (`yolov5/8`)
@@ -11,3 +13,4 @@ End-to-end tennis analysis with player & ball tracking, court detection, homogra
 
 ## Acknowledgments
 - Inspired by Code In a Jiffy's [www.youtube.com/@codeinajiffy] tutorial [https://youtu.be/L23oIHZE14w?si=rI1_3GC2W1LVLCWD]
+  
