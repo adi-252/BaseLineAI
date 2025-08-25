@@ -1,6 +1,8 @@
 import cv2
 import sys
 import numpy as np
+from utils.coordinate_utils import (m2px, px2m)
+
 
 from matplotlib.pylab import dtype
 sys.path.append('../')
@@ -17,7 +19,7 @@ class MiniCourt:
         self.player_detections = player_detections
         self.homography_matrix = homography_matrix
         self.lines = []   # list of lists s.t. each sub-list is a list of 2 tuples s.t. each line defined by its start and end points which are the two tuples
-        self.m2px, self.W_px, self.H_px = self.make_mapper() # W_px, H_px = Pixel Dimensions of Mini Court Outer dimensions
+        self.W_px, self.H_px = self.make_mapper() # W_px, H_px = Pixel Dimensions of Mini Court Outer dimensions
 
         '''
         NEED:
@@ -31,13 +33,7 @@ class MiniCourt:
         padding = self.padding
         scale = self.scale
         W_px, H_px = (constants.DOUBLES_BASELINE * scale) + padding * 2 ,(constants.SIDELINE * scale) + padding * 2
-        def m2px(x_m, y_m):
-            # Convert meters to pixels (assuming a scale)
-            x_px = int(x_m * scale + padding)
-            y_px = int((y_m * scale) + padding)
-            return (x_px, y_px)
-
-        return m2px, W_px, H_px
+        return W_px, H_px
         
     def set_court_lines(self):
         '''
@@ -48,7 +44,7 @@ class MiniCourt:
         def add(start, end):
             start_x, start_y = start
             end_x, end_y = end
-            self.lines.append([self.m2px(start_x, start_y), self.m2px(end_x, end_y)])
+            self.lines.append([m2px(start_x, start_y, self.scale, self.padding), m2px(end_x, end_y, self.scale, self.padding)])
 
         # BASELINE - NEAR
         add([0, 0], [constants.DOUBLES_BASELINE, 0])
@@ -102,21 +98,16 @@ class MiniCourt:
                     (overlay_end_x, overlay_end_y),
                     (255, 255, 255), 2)   # 2 px white border
     
-    def p2m(self, point_px):
-        p = np.array([[point_px]], dtype=np.float32)  
-        return cv2.perspectiveTransform(p, self.homography_matrix)
-
-
     def draw_ball_position(self, frame, ball_dict):
         for track_id, bbox in ball_dict.items():
             x1_reg, y1_reg, x2_reg, y2_reg = bbox
             x1_reg_mid = int((x1_reg + x2_reg) / 2)
             y1_reg_mid = int((y1_reg + y2_reg) / 2)
-            point_mini_m = self.p2m((x1_reg_mid, y1_reg_mid))
+            point_mini_m = px2m((x1_reg_mid, y1_reg_mid), self.homography_matrix)
             x1_m, y1_m = point_mini_m[0][0]
             if x1_m > constants.DOUBLES_BASELINE or y1_m > constants.SIDELINE or x1_m < 0 or y1_m < 0:
                 continue
-            x1_mini_px, y1_mini_px = self.m2px(x1_m, y1_m)
+            x1_mini_px, y1_mini_px = m2px(x1_m, y1_m, self.scale, self.padding)
             cv2.circle(frame, (x1_mini_px + self.start_x, y1_mini_px + self.start_y), 5, (0, 255, 255), -1)
 
     def draw_player_positions(self, frame, player_dict):
@@ -124,12 +115,12 @@ class MiniCourt:
             x1_reg, y1_reg, x2_reg, y2_reg = bbox
             x_reg = int((x1_reg + x2_reg) / 2)
             y_reg = int(max(y1_reg, y2_reg)) 
-            point_mini_m = self.p2m((x_reg, y_reg))
+            point_mini_m = px2m((x_reg, y_reg), self.homography_matrix)
             x1_m, y1_m = point_mini_m[0][0]
             if x1_m > constants.DOUBLES_BASELINE + 3 or y1_m > constants.SIDELINE + 3 or x1_m < -3 or y1_m < -3:
                 continue
-            x1_mini_px, y1_mini_px = self.m2px(x1_m, y1_m)
-            
+            x1_mini_px, y1_mini_px = m2px(x1_m, y1_m, self.scale, self.padding)
+
             if track_id == 1:
                 frame = cv2.rectangle(frame, (x1_mini_px + self.start_x, y1_mini_px + self.start_y), (x1_mini_px + self.start_x + 10, y1_mini_px + self.start_y + 10), (255, 0, 255), -1)
             else:
