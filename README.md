@@ -9,3 +9,5 @@ End-to-end tennis analysis with player & ball tracking, court detection, homogra
 - Mini-court overlay visualization
 - Notebooks for training (Roboflow datasets)
 
+## Acknowledgments
+- Inspired by Code In a Jiffy's [www.youtube.com/@codeinajiffy] tutorial [https://youtu.be/L23oIHZE14w?si=rI1_3GC2W1LVLCWD]
