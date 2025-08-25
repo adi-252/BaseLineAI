@@ -1,6 +1,42 @@
-*.pt
-*.jpg
-*.png
-*.mp4
-input_videos/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual envs
+venv/
+.venv/
 baselineai-venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data & outputs
+input_videos/
+output_videos/
+prediction/
+tracker_stubs/
+training/.ipynb_checkpoints/
+*.log
+
+# Models
+models/
+!models/.gitkeep        # keep the folder, not the files
+*.pt
+*.pth
+
+# Checkpoints / archives
+*.zip
+baselineai_project.zip
+
+# OS
+.DS_Store
+
+# Roboflow or dataset caches
+**/roboflow_cache/
+**/datasets/
