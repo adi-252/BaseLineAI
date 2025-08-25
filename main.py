@@ -12,23 +12,6 @@ import cv2
 import numpy as np
 
 
-# def ground_point_from_bbox(x1, y1, x2, y2):
-#     """Extract ground contact point from bounding box (bottom center)"""
-#     return ((x1 + x2) / 2.0, y2)
-
-
-# def to_meters(pt_px, H):
-#     """Convert pixel coordinates to real-world meters using homography"""
-#     p = np.array([[pt_px]], dtype=np.float32)      # shape (1,1,2)
-#     return cv2.perspectiveTransform(p, H)[0,0]     # -> (x_m, y_m)
-
-
-# def speed_kmh(prev_m, curr_m, fps):
-#     """Calculate speed in km/h between two consecutive positions"""
-#     if prev_m is None: 
-#         return 0.0
-#     return float(np.linalg.norm(curr_m - prev_m) * fps * 3.6)
-
 
 def main():
     # Read video
@@ -37,6 +20,9 @@ def main():
     
     # Set video FPS
     fps = 24
+    # Set scale
+    scale = 16
+    padding = 10
 
     # Detect players and ball
     player_tracker = PlayerTracker(model_path="yolov8x")
@@ -72,8 +58,8 @@ def main():
     output_frames = ball_tracker.draw_bboxes(output_frames, ball_detections)
     output_frames = court_line_detector.draw_keypoints_on_video(output_frames, court_keypoints)
     # Draw Mini Court
-    mini_court = MiniCourt(output_frames, start_x=1600, start_y=100, scale=16, padding=10, player_detections=filtered_player_detections, ball_detections=ball_detections, homography_matrix=homography_matrix)
-    output_frames = mini_court.draw_mini_court()  
+    mini_court = MiniCourt(output_frames, start_x=1600, start_y=100, scale=scale, padding=padding, player_detections=filtered_player_detections, ball_detections=ball_detections, homography_matrix=homography_matrix)
+    output_frames = mini_court.draw_mini_court()
     # Save Video
     save_video(output_frames, "output_videos/output_video.avi")
 
