@@ -8,6 +8,10 @@ from trackers import (PlayerTracker,
                       BallTracker)
 
 from court_line_detector import CourtLineDetector
+
+from analysis.speed_analysis import (create_speed_series,
+                                      identify_shots)
+
 import cv2
 import numpy as np
 
@@ -60,10 +64,14 @@ def main():
     # Draw Mini Court
     mini_court = MiniCourt(output_frames, start_x=1600, start_y=100, scale=scale, padding=padding, player_detections=filtered_player_detections, ball_detections=ball_detections, homography_matrix=homography_matrix)
     output_frames = mini_court.draw_mini_court()
+
+    speeds, ball_coords_m = create_speed_series(ball_detections, fps=fps, homography_matrix=homography_matrix)
+
+    # Identify shots
+    shot_indices = identify_shots(speeds, ball_coords_m)
+
     # Save Video
     save_video(output_frames, "output_videos/output_video.avi")
-
-    
 
 if __name__ == "__main__":
     main()
