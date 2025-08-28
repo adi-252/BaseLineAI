@@ -12,6 +12,8 @@ from court_line_detector import CourtLineDetector
 from analysis.speed_analysis import (create_speed_series,
                                       identify_shots)
 
+import matplotlib.pyplot as plt
+
 import cv2
 import numpy as np
 
@@ -65,10 +67,12 @@ def main():
     mini_court = MiniCourt(output_frames, start_x=1600, start_y=100, scale=scale, padding=padding, player_detections=filtered_player_detections, ball_detections=ball_detections, homography_matrix=homography_matrix)
     output_frames = mini_court.draw_mini_court()
 
-    speeds, ball_coords_m = create_speed_series(ball_detections, fps=fps, homography_matrix=homography_matrix)
+    ball_speeds, ball_coords_m, p1_speeds, p2_speeds, p1_coords_m, p2_coords_m = create_speed_series(ball_detections, player_detections, fps=fps, H=homography_matrix)
 
-    # Identify shots
-    shot_indices = identify_shots(speeds, ball_coords_m)
+    # Identify shot speeds, shot frames
+    shot_speeds, shot_frames = identify_shots(ball_speeds, ball_coords_m)
+
+    # Draw shot speeds, num shots, % forehand shots, % backhand shots, player_speeds
 
     # Save Video
     save_video(output_frames, "output_videos/output_video.avi")
