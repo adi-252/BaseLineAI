@@ -203,11 +203,6 @@ class Analyzer:
             if seg.size == 0 or not np.isfinite(seg).any():
                 continue
 
-            # robust peak & argmax (for the timestamp)
-            # t_off    = int(np.nanargmax(seg))
-            # peak_kmh = float(seg[t_off])
-            # t_peak   = int(t0 + t_off)
-
             peak_kmh = float(np.percentile(seg, ROBUST_PCT))
             t_peak   = int(t0 + int(np.nanargmax(seg)))
 
@@ -245,17 +240,66 @@ class Analyzer:
         # Draw the white border
         cv2.rectangle(frame, (self.analysis_box_x1, self.analysis_box_y1), (analysis_box_x2, analysis_box_y2), (255, 255, 255), 2)
 
-    # def draw_shot_speed(self, frame, frame_number):
-    #     for shot in self.shots:
-    #         if shot['t'] == frame['t']:
-    #             cv2.putText(frame, f"Shot Speed: {shot['peak_kmh']:.1f} km/h", (self.analysis_box_x1 + 10, self.analysis_box_y1 + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    def draw_shot_speed(self, frame, frame_number, numShots):
+        """
+        Draw shot speed information and current player speeds on the frame.
+        Returns True if a shot was displayed, False otherwise.
+        """
+        # Always show current player speeds
+        if frame_number < len(self.p1_speeds) and frame_number < len(self.p2_speeds):
+            text_x = self.analysis_box_x1 + 10
+            text_y = self.analysis_box_y1 + 30
+            
+            # Draw current player speeds
+            p1_speed = self.p1_speeds[frame_number]
+            p2_speed = self.p2_speeds[frame_number]
+            
+            # Player 1 speed
+            p1_text = f"P1: {p1_speed:.1f} km/h"
+            cv2.putText(frame, p1_text, (text_x, text_y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            
+            # Player 2 speed
+            p2_text = f"P2: {p2_speed:.1f} km/h"
+            cv2.putText(frame, p2_text, (text_x, text_y + 25), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+            
+            # Update text_y for shot information
+            text_y += 60
+            
+        # Show shot information if available
+        shot_displayed = False
+        if hasattr(self, 'shots') and self.shots:
+            # Find shots that are currently being displayed (within a time window)
+            DISPLAY_WINDOW_FRAMES = 30  # Show shot info for 30 frames after impact
+            
+            for shot in self.shots:
+                # Check if this shot should be displayed at current frame
+                if shot['t'] <= frame_number <= shot['t'] + DISPLAY_WINDOW_FRAMES:
+                    # Calculate position for text
+                    text_x = self.analysis_box_x1 + 10
+                    shot_text_y = text_y + (numShots * 25)
+                    
+                    # Draw shot information
+                    shot_text = f"Shot P{shot['player']}: {shot['peak_kmh']:.1f} km/h"
+                    cv2.putText(frame, shot_text, (text_x, shot_text_y), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    # Draw impact frame indicator
+                    impact_text = f"Frame: {shot['t']}"
+                    cv2.putText(frame, impact_text, (text_x, shot_text_y + 15), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                    
+                    shot_displayed = True
+                    numShots += 1
+                    
+        return shot_displayed
 
     def draw_analysis_box(self, frames, overlay_start_x, overlay_start_y):
         output_frames = []
         for i, frame in enumerate(frames):
             self.draw_box(frame, overlay_start_x, overlay_start_y)
-            # self.draw_shot_speed(frame, i)
-
+            self.draw_shot_speed(frame, i, 0)  # Reset shot counter for each frame
             output_frames.append(frame)
         return output_frames
 
