@@ -21,14 +21,6 @@ class MiniCourt:
         self.lines = []   # list of lists s.t. each sub-list is a list of 2 tuples s.t. each line defined by its start and end points which are the two tuples
         self.W_px, self.H_px = self.make_mapper() # W_px, H_px = Pixel Dimensions of Mini Court Outer dimensions
 
-        '''
-        NEED:
-        - Method to convert meters to mini court coordinates
-        - Method to define all lines (line defined by points of two ends)
-        - Method which can take two points and draw line
-        - Method to add overlay (mini court) to video frames
-        '''
-
     def make_mapper(self):
         padding = self.padding
         scale = self.scale
@@ -74,10 +66,10 @@ class MiniCourt:
 
     def add_overlay(self, frame):
         # Ensure all values are integers and within frame bounds
-        overlay_start_x = int(self.start_x) - 50
-        overlay_start_y = int(self.start_y) - 50
-        overlay_end_x = int(self.W_px + self.start_x) + 50
-        overlay_end_y = int(self.H_px + self.start_y) + 50
+        self.overlay_start_x = int(self.start_x) - 50
+        self.overlay_start_y = int(self.start_y) - 50
+        self.overlay_end_x = int(self.W_px + self.start_x) + 50
+        self.overlay_end_y = int(self.H_px + self.start_y) + 50
 
         # # overlay = frame.copy()
         # cv2.rectangle(frame, (overlay_start_x, overlay_start_y), (overlay_end_x, overlay_end_y), (20, 30, 30), -1)
@@ -86,16 +78,16 @@ class MiniCourt:
          # --- Step 1: Semi-transparent filled background ---
         overlay = frame.copy()
         cv2.rectangle(overlay,
-                    (overlay_start_x, overlay_start_y),
-                    (overlay_end_x, overlay_end_y),
+                    (self.overlay_start_x, self.overlay_start_y),
+                    (self.overlay_end_x, self.overlay_end_y),
                     (20, 30, 30), -1)   # filled dark background
         alpha = 0.9
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
         # --- Step 2: White border ---
         cv2.rectangle(frame,
-                    (overlay_start_x, overlay_start_y),
-                    (overlay_end_x, overlay_end_y),
+                    (self.overlay_start_x, self.overlay_start_y),
+                    (self.overlay_end_x, self.overlay_end_y),
                     (255, 255, 255), 2)   # 2 px white border
     
     def draw_ball_position(self, frame, ball_dict):
@@ -138,6 +130,5 @@ class MiniCourt:
             self.draw_lines(frame)  
             self.draw_ball_position(frame, ball_dict)
             self.draw_player_positions(frame, player_dict)
-        
             output_video_frames.append(frame)
-        return output_video_frames
+        return output_video_frames, self.overlay_start_x , self.overlay_end_y

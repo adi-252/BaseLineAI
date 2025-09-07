@@ -6,132 +6,256 @@ from BaseLineAI import constants
 import numpy as np, cv2
 from scipy.signal import find_peaks
 
+class Analyzer:
 
-COURT_W = 10.97  # m (doubles width) — change to 8.23 if you modeled singles
-COURT_L = 23.77  # m
+    def __init__(self, H, fps):
+        self.H = H
+        self.fps = fps
+        self.COURT_W = 10.97  # m (doubles width) — change to 8.23 if you modeled singles
+        self.COURT_L = 23.77  # m
+        self.ball_speeds = []
+        self.ball_coords_m = []
+        self.p1_speeds = []
+        self.p2_speeds = []
+        self.p1_coords_m = []
+        self.p2_coords_m = []
+        self.d_b_to_closest_player = []
+        self.radial_v = []
+        self.closest_player = []
 
-def px2m_point(pt_px, H):
-    p = np.array([[pt_px]], np.float32)     # (1,1,2)
-    return cv2.perspectiveTransform(p, H)[0,0]  # (x_m, y_m)
+    def px2m_point(self, pt_px):
+        p = np.array([[pt_px]], np.float32)     # (1,1,2)
+        return cv2.perspectiveTransform(p, self.H)[0,0]  # (x_m, y_m)
 
-def m2px_points(pts_m, H):
-    Hinv = np.linalg.inv(H)
-    pts = np.asarray(pts_m, np.float32).reshape(-1,1,2)
-    return cv2.perspectiveTransform(pts, Hinv).reshape(-1,2)
+    def m2px_points(self, pts_m):
+        Hinv = np.linalg.inv(self.H)
+        pts = np.asarray(pts_m, np.float32).reshape(-1,1,2)
+        return cv2.perspectiveTransform(pts, Hinv).reshape(-1,2)
 
-def baseline_lines_px(H):
-    # Endpoints of near (y=0) and far (y=L) baselines in PIXELS
-    near = m2px_points([(0,0), (COURT_W,0)], H)     # [[x0,y0],[x1,y1]]
-    far  = m2px_points([(0,COURT_L), (COURT_W,COURT_L)], H)
-    return near, far
+    def baseline_lines_px(self):
+        # Endpoints of near (y=0) and far (y=L) baselines in PIXELS
+        near = self.m2px_points([(0,0), (self.COURT_W,0)])     # [[x0,y0],[x1,y1]]
+        far  = self.m2px_points([(0,self.COURT_L), (self.COURT_W,self.COURT_L)])
+        return near, far
 
-def y_on_line_at_x(p0, p1, x):
-    (x0,y0), (x1,y1) = p0, p1
-    if abs(x1-x0) < 1e-6:  # vertical-ish; fallback
-        return (y0+y1)*0.5
-    t = (x - x0) / (x1 - x0)
-    return y0 + t*(y1 - y0)
+    def y_on_line_at_x(self, p0, p1, x):
+        (x0,y0), (x1,y1) = p0, p1
+        if abs(x1-x0) < 1e-6:  # vertical-ish; fallback
+            return (y0+y1)*0.5
+        t = (x - x0) / (x1 - x0)
+        return y0 + t*(y1 - y0)
 
-def bbox_bottom_mid(b):
-    x1,y1,x2,y2 = b
-    return ((x1+x2)/2.0, y2)
+    def bbox_bottom_mid(self, b):
+        x1,y1,x2,y2 = b
+        return ((x1+x2)/2.0, y2)
 
-def clamp_ground_px(bbox, is_near, near_line_px, far_line_px):
-    xmid, ybot = bbox_bottom_mid(bbox)
-    y_near = y_on_line_at_x(near_line_px[0], near_line_px[1], xmid)
-    y_far  = y_on_line_at_x(far_line_px[0],  far_line_px[1],  xmid)
+    def clamp_ground_px(self, bbox, is_near, near_line_px, far_line_px):
+        xmid, ybot = self.bbox_bottom_mid(bbox)
+        y_near = self.y_on_line_at_x(near_line_px[0], near_line_px[1], xmid)
+        y_far  = self.y_on_line_at_x(far_line_px[0],  far_line_px[1],  xmid)
 
-    low, high = (min(y_near, y_far), max(y_near, y_far))
-    # image Y increases downward
-    if is_near:
-        y = min(ybot, high)   # don't go below the lower (on-screen) baseline
-    else:
-        y = max(ybot, low)    # don't go above the upper (on-screen) baseline
-    return (xmid, y)
-
-def clamp_ball_px(bbox, near_line_px, far_line_px):
-    x1,y1,x2,y2 = bbox
-    cx, cy = (x1+x2)/2.0, (y1+y2)/2.0
-
-    y_near = y_on_line_at_x(near_line_px[0], near_line_px[1], cx)
-    y_far  = y_on_line_at_x(far_line_px[0],  far_line_px[1],  cx)
-
-    low  = min(y_near, y_far)
-    high = max(y_near, y_far)
-    cy_clamped = np.clip(cy, low, high)  # robust even if lines cross/slant
-
-    return (cx, cy_clamped)
-
-def create_speed_series(ball_positions, player_positions, fps, H):
-    """
-    ball_positions: list over frames of {ball_id: (x1,y1,x2,y2)}
-    player_positions: list over frames of {track_id: bbox}  (assume ids 1 & 2)
-    """
-    near_line_px, far_line_px = baseline_lines_px(H)
-
-    ball_m, p1_m, p2_m = [], [], []
-
-    # Decide which track is near vs far once (based on first frame bottoms)
-    first_players = next((d for d in player_positions if len(d)>=2), None)
-    assert first_players is not None, "Need two player boxes"
-    items = sorted(first_players.items())  # [(id,bbox), (id,bbox)]
-    (id_a, box_a), (id_b, box_b) = items[0], items[1]
-    # larger pixel y2 is nearer to the camera
-    is_a_near = box_a[3] > box_b[3]
-    near_id, far_id = (id_a, id_b) if is_a_near else (id_b, id_a)
-
-
-    # create coords_m arrays for ball and both players
-    for t in range(len(ball_positions)):
-        # --- ball ---
-        ball_dict = ball_positions[t]
-        if not ball_dict: 
-            ball_m.append(ball_m[-1] if ball_m else (np.nan, np.nan))
+        low, high = (min(y_near, y_far), max(y_near, y_far))
+        # image Y increases downward
+        if is_near:
+            y = min(ybot, high)   # don't go below the lower (on-screen) baseline
         else:
-            # pick the first/only ball bbox
-            (_, bb) = next(iter(ball_dict.items()))
-            cx, cy = clamp_ball_px(bb, near_line_px, far_line_px)
-            ball_m.append(tuple(px2m_point((cx,cy), H)))
+            y = max(ybot, low)    # don't go above the upper (on-screen) baseline
+        return (xmid, y)
 
-        # --- players ---
-        p_dict = player_positions[t]
-        # default carry-forward if missing
-        p1_m.append(p1_m[-1] if p1_m else (np.nan,np.nan))
-        p2_m.append(p2_m[-1] if p2_m else (np.nan,np.nan))
-        if p_dict:
-            if near_id in p_dict:
-                p1_px = clamp_ground_px(p_dict[near_id], True,  near_line_px, far_line_px)
-                p1_m[-1] = tuple(px2m_point(p1_px, H))
-            if far_id in p_dict:
-                p2_px = clamp_ground_px(p_dict[far_id],  False, near_line_px, far_line_px)
-                p2_m[-1] = tuple(px2m_point(p2_px, H))
+    def clamp_ball_px(self, bbox, near_line_px, far_line_px):
+        x1,y1,x2,y2 = bbox
+        cx, cy = (x1+x2)/2.0, (y1+y2)/2.0
 
-    ball_m = np.asarray(ball_m, float)
-    p1_m   = np.asarray(p1_m, float)
-    p2_m   = np.asarray(p2_m, float)
+        y_near = self.y_on_line_at_x(near_line_px[0], near_line_px[1], cx)
+        y_far  = self.y_on_line_at_x(far_line_px[0],  far_line_px[1],  cx)
 
-    # Ball instantaneous speed series (km/h)
-    if len(ball_m) < 2:
-        speeds = np.zeros(len(ball_m))
-    else:
-        dists = np.linalg.norm(ball_m[1:] - ball_m[:-1], axis=1)  # m/frame
-        speeds = np.r_[0.0, dists * fps * 3.6]                    # km/h
+        low  = min(y_near, y_far)
+        high = max(y_near, y_far)
+        cy_clamped = np.clip(cy, low, high)  # robust even if lines cross/slant
 
-    # Player instantaneous speed series (km/h)
-    p1_speeds = np.r_[0.0, np.linalg.norm(p1_m[1:] - p1_m[:-1], axis=1) * fps * 3.6] if len(p1_m) >= 2 else np.zeros(len(p1_m))
-    p2_speeds = np.r_[0.0, np.linalg.norm(p2_m[1:] - p2_m[:-1], axis=1) * fps * 3.6] if len(p2_m) >= 2 else np.zeros(len(p2_m))
+        return (cx, cy_clamped)
 
-    return speeds, ball_m, p1_speeds, p2_speeds, p1_m, p2_m
+    def create_speed_series(self, ball_positions, player_positions):
+        """
+        ball_positions: list over frames of {ball_id: (x1,y1,x2,y2)}
+        player_positions: list over frames of {track_id: bbox}  (assume ids 1 & 2)
+        """
+        near_line_px, far_line_px = self.baseline_lines_px()
 
-def identify_shots(ball_speeds, ball_coords_m):
-    shot_frames = []
-    shot_speeds = []
+        # Decide which track is near vs far once (based on first frame bottoms)
+        first_players = next((d for d in player_positions if len(d)>=2), None)
+        assert first_players is not None, "Need two player boxes"
+        items = sorted(first_players.items())  # [(id,bbox), (id,bbox)]
+        (id_a, box_a), (id_b, box_b) = items[0], items[1]
+        # larger pixel y2 is nearer to the camera
+        is_a_near = box_a[3] > box_b[3]
+        near_id, far_id = (id_a, id_b) if is_a_near else (id_b, id_a)
 
-    peaks, _ = find_peaks(ball_speeds, distance = 20)  # height in km/h, distance in frames
+        # create coords_m arrays for ball and both players
+        for t in range(len(ball_positions)):
+            # --- ball ---
+            ball_dict = ball_positions[t]
+            if not ball_dict: 
+                self.ball_coords_m.append(self.ball_coords_m[-1] if self.ball_coords_m else (np.nan, np.nan))
+            else:
+                # pick the first/only ball bbox
+                (_, bb) = next(iter(ball_dict.items()))
+                cx, cy = self.clamp_ball_px(bb, near_line_px, far_line_px)
+                self.ball_coords_m.append(tuple(self.px2m_point((cx,cy))))
 
-    for i in peaks:
-        if ball_speeds[i] > 80:
-            shot_frames.append(i)
-            shot_speeds.append(ball_speeds[i])
+            # --- players ---
+            p_dict = player_positions[t]
+            # default carry-forward if missing
+            self.p1_coords_m.append(self.p1_coords_m[-1] if self.p1_coords_m else (np.nan,np.nan))
+            self.p2_coords_m.append(self.p2_coords_m[-1] if self.p2_coords_m else (np.nan,np.nan))
+            if p_dict:
+                if near_id in p_dict:
+                    p1_px = self.clamp_ground_px(p_dict[near_id], True,  near_line_px, far_line_px)
+                    self.p1_coords_m[-1] = tuple(self.px2m_point(p1_px))
+                if far_id in p_dict:
+                    p2_px = self.clamp_ground_px(p_dict[far_id],  False, near_line_px, far_line_px)
+                    self.p2_coords_m[-1] = tuple(self.px2m_point(p2_px))
 
-    return shot_frames, shot_speeds
+        self.ball_coords_m = np.asarray(self.ball_coords_m, float)
+        self.p1_coords_m   = np.asarray(self.p1_coords_m, float)
+        self.p2_coords_m   = np.asarray(self.p2_coords_m, float)
+
+        # Ball instantaneous speed series (km/h)
+        if len(self.ball_coords_m) < 2:
+            self.ball_speeds = np.zeros(len(self.ball_coords_m))
+        else:
+            dists = np.linalg.norm(self.ball_coords_m[1:] - self.ball_coords_m[:-1], axis=1)  # m/frame
+            self.ball_speeds = np.r_[0.0, dists * self.fps * 3.6]              # km/h
+
+        # Player instantaneous speed series (km/h)
+        self.p1_speeds = np.r_[0.0, np.linalg.norm(self.p1_coords_m[1:] - self.p1_coords_m[:-1], axis=1) * self.fps * 3.6] if len(self.p1_coords_m) >= 2 else np.zeros(len(self.p1_coords_m))
+        self.p2_speeds = np.r_[0.0, np.linalg.norm(self.p2_coords_m[1:] - self.p2_coords_m[:-1], axis=1) * self.fps * 3.6] if len(self.p2_coords_m) >= 2 else np.zeros(len(self.p2_coords_m))
+
+    def moving_average(self, x, k=3):
+        k = max(1, int(k))
+        return x if k == 1 else np.convolve(x, np.ones(k)/k, mode="same")
+
+    def player_distance_and_radial_velocity(self):
+        """
+        Calculate the distance and radial velocity between the ball and a player.
+        """
+        b = np.asarray(self.ball_coords_m, float)
+        p1 = np.asarray(self.p1_coords_m, float)
+        p2 = np.asarray(self.p2_coords_m, float)
+
+        # ball distance to each player
+        d1 = np.full(len(b), np.inf, float)
+        d2 = np.full(len(b), np.inf, float)
+
+        d1 = np.linalg.norm(b - p1, axis=1)
+        d2 = np.linalg.norm(b - p2, axis=1)
+
+        # distance to nearest player and whom that is
+        d = np.minimum(d1, d2)   
+        who = np.where(d1 <= d2, 1, 2)  
+
+        # smoothing
+        self.d_b_to_closest_player = self.moving_average(d, k=5)
+
+        # radial velocity
+        self.radial_v = np.zeros_like(self.d_b_to_closest_player)
+        self.radial_v[1:] = (self.d_b_to_closest_player[1:] - self.d_b_to_closest_player[:-1]) * self.fps * 3.6   # km/h
+        self.closest_player = np.where(d1 <= d2, 1, 2)
+
+        
+    def find_impacts(self):
+        T = len(self.d_b_to_closest_player)
+
+        candidates= []
+        prev_is_local_min = False
+
+        for t in range(1, T - 1):
+            is_local_min = (self.d_b_to_closest_player[t] < self.d_b_to_closest_player[t - 1]) and (self.d_b_to_closest_player[t] <= self.d_b_to_closest_player[t + 1])
+            sign_flip    = (self.radial_v[t - 1] < 0) and (self.radial_v[t] >= 0)
+            if sign_flip and prev_is_local_min:
+                candidates.append(t)
+            prev_is_local_min = is_local_min
+        self.candidates = candidates
+
+    def compute_shot_speeds(self):
+        POST_WINDOW_S = 1       # seconds after impact to search for peak
+        ROBUST_PCT    = 95         # robust peak = percentile to reduce single-frame spikes
+        MIN_SHOT_KMH = 70
+
+        v   = np.asarray(self.ball_speeds, float)     # km/h
+        fps = float(self.fps)
+        T   = len(v)
+        W   = max(1, int(round(POST_WINDOW_S * fps)))
+
+        shots = []
+        cand = self.candidates
+
+        for i, t0 in enumerate(cand):
+            # end by window
+            t1_win = min(T - 1, t0 + W)
+            # also stop before the next impact (avoid blending two shots)
+            t1_next = cand[i+1] - 1 if i + 1 < len(cand) else t1_win
+            t1 = min(t1_win, t1_next)
+            if t1 < t0:
+                continue
+
+            seg = v[t0:t1+1]  # km/h segment
+            if seg.size == 0 or not np.isfinite(seg).any():
+                continue
+
+            # robust peak & argmax (for the timestamp)
+            # t_off    = int(np.nanargmax(seg))
+            # peak_kmh = float(seg[t_off])
+            # t_peak   = int(t0 + t_off)
+
+            peak_kmh = float(np.percentile(seg, ROBUST_PCT))
+            t_peak   = int(t0 + int(np.nanargmax(seg)))
+
+            if peak_kmh < MIN_SHOT_KMH:
+                continue   # skip this candidate
+
+            # which player hit (nearest at impact frame)
+            player = int(self.closest_player[t0]) if len(self.closest_player) == T else None
+
+            shots.append({
+                "t": t0,                    # impact frame
+                "t_peak": t_peak,           # frame of max speed in window
+                "player": player,           # 1 or 2 (if available)
+                "peak_kmh": peak_kmh,       # per-shot reported speed
+                "speed_at_impact_kmh": float(v[t0])
+            })
+
+        self.shots = shots
+        for shot in self.shots:
+            print(f"Shot by P{shot['player']} at frame {shot['t']} (peak {shot['peak_kmh']:.1f} km/h at frame {shot['t_peak']})")
+        return shots
+
+    def draw_box(self, frame, overlay_start_x, overlay_start_y):
+        # Draw a semi-transparent rectangle for the analysis box
+        overlay = frame.copy()
+        self.analysis_box_x1 = overlay_start_x
+        self.analysis_box_y1 = overlay_start_y + 40
+        analysis_box_x2 = self.analysis_box_x1 + 300
+        analysis_box_y2 = self.analysis_box_y1 + 200
+
+        cv2.rectangle(overlay, (self.analysis_box_x1, self.analysis_box_y1), (analysis_box_x2, analysis_box_y2), (20, 30, 30), -1)  # filled dark background
+        alpha = 0.9
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+
+        # Draw the white border
+        cv2.rectangle(frame, (self.analysis_box_x1, self.analysis_box_y1), (analysis_box_x2, analysis_box_y2), (255, 255, 255), 2)
+
+    # def draw_shot_speed(self, frame, frame_number):
+    #     for shot in self.shots:
+    #         if shot['t'] == frame['t']:
+    #             cv2.putText(frame, f"Shot Speed: {shot['peak_kmh']:.1f} km/h", (self.analysis_box_x1 + 10, self.analysis_box_y1 + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    def draw_analysis_box(self, frames, overlay_start_x, overlay_start_y):
+        output_frames = []
+        for i, frame in enumerate(frames):
+            self.draw_box(frame, overlay_start_x, overlay_start_y)
+            # self.draw_shot_speed(frame, i)
+
+            output_frames.append(frame)
+        return output_frames
+
