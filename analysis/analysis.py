@@ -22,6 +22,11 @@ class Analyzer:
         self.d_b_to_closest_player = []
         self.radial_v = []
         self.closest_player = []
+        self.shots_distribution = {
+            'left': 0,
+            'middle': 0,
+            'right': 0
+        }
 
     def px2m_point(self, pt_px):
         p = np.array([[pt_px]], np.float32)     # (1,1,2)
@@ -221,8 +226,7 @@ class Analyzer:
             })
 
         self.shots = shots
-        for shot in self.shots:
-            print(f"Shot by P{shot['player']} at frame {shot['t']} (peak {shot['peak_kmh']:.1f} km/h at frame {shot['t_peak']})")
+
         return shots
 
     def draw_box(self, frame, overlay_start_x, overlay_start_y):
@@ -240,7 +244,7 @@ class Analyzer:
         # Draw the white border
         cv2.rectangle(frame, (self.analysis_box_x1, self.analysis_box_y1), (analysis_box_x2, analysis_box_y2), (255, 255, 255), 2)
 
-    def draw_shot_speed(self, frame, frame_number, numShots):
+    def draw_shot_speed(self, frame, frame_number):
         """
         Draw shot speed information and current player speeds on the frame.
         Returns True if a shot was displayed, False otherwise.
@@ -278,7 +282,7 @@ class Analyzer:
                 if shot['t'] <= frame_number <= shot['t'] + DISPLAY_WINDOW_FRAMES:
                     # Calculate position for text
                     text_x = self.analysis_box_x1 + 10
-                    shot_text_y = text_y + (numShots * 25)
+                    shot_text_y = text_y
                     
                     # Draw shot information
                     shot_text = f"Shot P{shot['player']}: {shot['peak_kmh']:.1f} km/h"
@@ -291,15 +295,29 @@ class Analyzer:
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
                     
                     shot_displayed = True
-                    numShots += 1
-                    
-        return shot_displayed
 
+    def draw_shot_distribution(self, frame, frame_number):
+        '''
+        Args:
+            frame: the frame to draw the shot distribution on
+            frame_number: the frame number to draw the shot distribution on
+        Returns:
+            None
+        
+        Description:
+            Draw the shot distribution on the frame.
+            
+        '''
+
+                    
     def draw_analysis_box(self, frames, overlay_start_x, overlay_start_y):
         output_frames = []
         for i, frame in enumerate(frames):
             self.draw_box(frame, overlay_start_x, overlay_start_y)
-            self.draw_shot_speed(frame, i, 0)  # Reset shot counter for each frame
+            self.draw_shot_speed(frame, i)  
+            self.draw_shot_distribution(frame, i)
             output_frames.append(frame)
         return output_frames
+
+
 
