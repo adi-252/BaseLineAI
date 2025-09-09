@@ -1,10 +1,10 @@
-
 import cv2
 import numpy as np
-from BaseLineAI.utils.coordinate_utils import px2m
-from BaseLineAI import constants
+from utils.coordinate_utils import px2m
 import numpy as np, cv2
 from scipy.signal import find_peaks
+import copy
+
 
 class Analyzer:
 
@@ -22,11 +22,8 @@ class Analyzer:
         self.d_b_to_closest_player = []
         self.radial_v = []
         self.closest_player = []
-        self.shots_distribution = {
-            'left': 0,
-            'middle': 0,
-            'right': 0
-        }
+        self.shot_placements = []
+        self.cur_shot_placement = {'frame': 0, 'left': 0, 'middle': 0, 'right': 0}
 
     def px2m_point(self, pt_px):
         p = np.array([[pt_px]], np.float32)     # (1,1,2)
@@ -217,6 +214,33 @@ class Analyzer:
             # which player hit (nearest at impact frame)
             player = int(self.closest_player[t0]) if len(self.closest_player) == T else None
 
+            # set shot_placement using the frame of the next impact
+            next_impact_frame = None
+            if i + 1 < len(cand):
+                next_impact_frame = cand[i + 1]
+            if self.shot_placements:
+                curr_shot_placement = copy.deepcopy(self.shot_placements[-1])
+                curr_shot_placement['frame'] = t0
+            else:
+                curr_shot_placement = {
+                    'frame': t0,
+                    'left': 0,
+                    'middle': 0,
+                    'right': 0
+                }
+
+            if next_impact_frame is not None and next_impact_frame < T:
+                ball_x_at_next_impact = self.ball_coords_m[next_impact_frame][0]
+                if 1.37 <= ball_x_at_next_impact < (1.37 + 8.23/3):
+                    curr_shot_placement['left'] += 1
+                elif (1.37 + 8.23/3) <= ball_x_at_next_impact < (1.37 + (8.23/3) * 2):
+                    curr_shot_placement['middle'] += 1
+                elif (1.37 + (8.23/3) * 2) <= ball_x_at_next_impact < (1.37 + (8.23/3) * 3):
+                    curr_shot_placement['right'] += 1
+
+            self.shot_placements.append(curr_shot_placement)
+
+
             shots.append({
                 "t": t0,                    # impact frame
                 "t_peak": t_peak,           # frame of max speed in window
@@ -235,7 +259,7 @@ class Analyzer:
         self.analysis_box_x1 = overlay_start_x
         self.analysis_box_y1 = overlay_start_y + 40
         analysis_box_x2 = self.analysis_box_x1 + 300
-        analysis_box_y2 = self.analysis_box_y1 + 200
+        analysis_box_y2 = self.analysis_box_y1 + 350
 
         cv2.rectangle(overlay, (self.analysis_box_x1, self.analysis_box_y1), (analysis_box_x2, analysis_box_y2), (20, 30, 30), -1)  # filled dark background
         alpha = 0.9
@@ -251,8 +275,8 @@ class Analyzer:
         """
         # Always show current player speeds
         if frame_number < len(self.p1_speeds) and frame_number < len(self.p2_speeds):
-            text_x = self.analysis_box_x1 + 10
-            text_y = self.analysis_box_y1 + 30
+            p_speed_text_x = self.analysis_box_x1 + 10
+            p_speed_text_y = self.analysis_box_y1 + 30
             
             # Draw current player speeds
             p1_speed = self.p1_speeds[frame_number]
@@ -260,16 +284,16 @@ class Analyzer:
             
             # Player 1 speed
             p1_text = f"P1: {p1_speed:.1f} km/h"
-            cv2.putText(frame, p1_text, (text_x, text_y), 
+            cv2.putText(frame, p1_text, (p_speed_text_x, p_speed_text_y), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             # Player 2 speed
             p2_text = f"P2: {p2_speed:.1f} km/h"
-            cv2.putText(frame, p2_text, (text_x, text_y + 25), 
+            cv2.putText(frame, p2_text, (p_speed_text_x, p_speed_text_y + 25), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-            
-            # Update text_y for shot information
-            text_y += 60
+
+            # Update p_speed_text_y for shot information
+            p_speed_text_y += 60
             
         # Show shot information if available
         shot_displayed = False
@@ -282,7 +306,7 @@ class Analyzer:
                 if shot['t'] <= frame_number <= shot['t'] + DISPLAY_WINDOW_FRAMES:
                     # Calculate position for text
                     text_x = self.analysis_box_x1 + 10
-                    shot_text_y = text_y
+                    shot_text_y = p_speed_text_y
                     
                     # Draw shot information
                     shot_text = f"Shot P{shot['player']}: {shot['peak_kmh']:.1f} km/h"
@@ -296,7 +320,7 @@ class Analyzer:
                     
                     shot_displayed = True
 
-    def draw_shot_distribution(self, frame, frame_number):
+    def draw_shot_placement_distribution(self, frame, frame_number):
         '''
         Args:
             frame: the frame to draw the shot distribution on
@@ -305,17 +329,77 @@ class Analyzer:
             None
         
         Description:
-            Draw the shot distribution on the frame.
-            
+            Draw the shot distribution between (left, center, right) on the frame.
         '''
+        cur_shot_placement = self.cur_shot_placement
 
-                    
+        # Check if we need to update the current shot placement
+        if self.shot_placements and len(self.shot_placements) > 0:
+            first_shot_placement = self.shot_placements[0]
+            
+            if frame_number >= first_shot_placement['frame']:
+                # It's time to use this shot placement
+                self.cur_shot_placement = copy.deepcopy(first_shot_placement)
+                self.shot_placements.pop(0)  # Remove the first element
+
+        L = int(self.cur_shot_placement.get("left", 0))
+        M = int(self.cur_shot_placement.get("middle", 0))
+        R = int(self.cur_shot_placement.get("right", 0))
+
+        total = max(1, L + M + R)
+        p = np.array([L/total, M/total, R/total], float)
+
+        left_rect_width = int(p[0] * 260)
+        middle_rect_width = int(p[1] * 260)
+        right_rect_width = int(p[2] * 260)
+
+        cv2.putText(frame, "Shot Placement Distribution)", (self.analysis_box_x1 + 10, self.analysis_box_y1 + 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)                    
+        box_y = self.analysis_box_y1 + 160
+        box_x = self.analysis_box_x1 + 20
+
+        # main rectangle
+        cv2.rectangle(frame, (box_x, box_y), (box_x + 260, box_y + 40), (255, 255, 255), 2)
+        # left rectangle
+        cv2.rectangle(frame, (box_x + 2, box_y + 2), (box_x + 2 + left_rect_width, box_y + 38), (0, 0, 255), -1)
+        # middle rectangle
+        cv2.rectangle(frame, (box_x + 2 + left_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width, box_y + 38), (0, 255, 0), -1)
+        # right rectangle
+        cv2.rectangle(frame, (box_x + 2 + left_rect_width + middle_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width + right_rect_width, box_y + 38), (255, 0, 0), -1)
+
+        # Add text labels in the middle of each box
+        text_y = box_y + 25  # Center vertically in the box
+
+        # Left box label
+        if left_rect_width > 10:  # Only draw if box is wide enough
+            left_text_x = box_x + 2 + left_rect_width // 2
+            cv2.putText(frame, "L", (left_text_x - 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        # Middle box label
+        if middle_rect_width > 10:  # Only draw if box is wide enough
+            middle_text_x = box_x + 2 + left_rect_width + middle_rect_width // 2
+            cv2.putText(frame, "M", (middle_text_x - 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        # Right box label
+        if right_rect_width > 10:  # Only draw if box is wide enough
+            right_text_x = box_x + 2 + left_rect_width + middle_rect_width + right_rect_width // 2
+            cv2.putText(frame, "R", (right_text_x - 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        return None
+
+
+    def draw_shot_speed_distribution(self, frame, frame_number):
+        shots = self.shots
+        if not shots:
+            return
+        return 
+
+              
     def draw_analysis_box(self, frames, overlay_start_x, overlay_start_y):
         output_frames = []
         for i, frame in enumerate(frames):
             self.draw_box(frame, overlay_start_x, overlay_start_y)
             self.draw_shot_speed(frame, i)  
-            self.draw_shot_distribution(frame, i)
+            self.draw_shot_placement_distribution(frame, i)
             output_frames.append(frame)
         return output_frames
 
