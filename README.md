@@ -1,9 +1,11 @@
 # BaseLine AI - Computer Vision Tennis Analysis Tool
 
-BaseLine AI is an advanced computer vision toolkit for automated tennis match analysis. It leverages deep learning and geometric vision to provide detailed insights from tennis videos, including:
+BaseLine AI is an advanced computer vision toolkit for automated tennis match analysis.
 
+Watch a demo!
 [![Watch the video](https://img.youtube.com/vi/yeL9oK3OBRk/default.jpg)](https://www.youtube.com/watch?v=yeL9oK3OBRk)
 
+It leverages deep learning and geometric vision to provide detailed insights from tennis videos including:
 
 - **Player and Ball Tracking:**
 
@@ -51,3 +53,6 @@ BaseLine AI is an advanced computer vision toolkit for automated tennis match an
 ## Acknowledgments
 
 - Inspired by Code In a Jiffy's [www.youtube.com/@codeinajiffy] tutorial [https://youtu.be/L23oIHZE14w?si=rI1_3GC2W1LVLCWD]
+- Learned training workflows from Code in a Jiffy then independently designed a full analysis pipeline.
+- Engineered ball-tracking logic to calculate real-time gameplay stats and generate more detailed summaries.
+- Implemented homography to correct pixel-to-meter distortion, significantly improving speed accuracy compared to the demo.
