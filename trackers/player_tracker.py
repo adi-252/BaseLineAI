@@ -49,6 +49,8 @@ class PlayerTracker:
 
         player_dict = {}
         for box in results.boxes:
+            if box.id is None:
+                continue  # Skip boxes without a track ID
             track_id = int(box.id.tolist()[0])
             result = box.xyxy.tolist()[0]
             object_cls_id = box.cls.tolist()[0]
