@@ -3,6 +3,7 @@
 BaseLine AI is an advanced computer vision toolkit for automated tennis match analysis.
 
 Watch a demo!
+
 [![Watch the video](https://img.youtube.com/vi/yeL9oK3OBRk/default.jpg)](https://www.youtube.com/watch?v=yeL9oK3OBRk)
 
 It leverages deep learning and geometric vision to provide detailed insights from tennis videos including:
