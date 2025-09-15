@@ -61,7 +61,7 @@ def main():
     # Draw players and ball bboxes along with court keypoints on video frames
     output_frames = player_tracker.draw_bboxes(video_frames, filtered_player_detections)
     output_frames = ball_tracker.draw_bboxes(output_frames, ball_detections)
-    output_frames = court_line_detector.draw_keypoints_on_video(output_frames, court_keypoints)
+    # output_frames = court_line_detector.draw_keypoints_on_video(output_frames, court_keypoints)
     # Draw Mini Court
     mini_court = MiniCourt(output_frames, start_x=1600, start_y=100, scale=scale, padding=padding, player_detections=filtered_player_detections, ball_detections=ball_detections, homography_matrix=homography_matrix)
     output_frames, overlay_start_x, overlay_start_y = mini_court.draw_mini_court()

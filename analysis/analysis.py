@@ -349,12 +349,13 @@ class Analyzer:
         total = max(1, L + M + R)
         p = np.array([L/total, M/total, R/total], float)
 
-        left_rect_width = int(p[0] * 260)
-        middle_rect_width = int(p[1] * 260)
-        right_rect_width = int(p[2] * 260)
+        total_width = 256
+        left_rect_width = int(p[0] * total_width)
+        middle_rect_width = int(p[1] * total_width)
+        right_rect_width = int(p[2] * total_width)
 
-        cv2.putText(frame, "Shot Placement Distribution)", (self.analysis_box_x1 + 10, self.analysis_box_y1 + 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)                    
-        box_y = self.analysis_box_y1 + 160
+        cv2.putText(frame, "Shot Placement Distribution", (self.analysis_box_x1 + 10, self.analysis_box_y1 + 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)                    
+        box_y = self.analysis_box_y1 + 145
         box_x = self.analysis_box_x1 + 20
 
         # main rectangle
@@ -362,9 +363,9 @@ class Analyzer:
         # left rectangle
         cv2.rectangle(frame, (box_x + 2, box_y + 2), (box_x + 2 + left_rect_width, box_y + 38), (0, 0, 255), -1)
         # middle rectangle
-        cv2.rectangle(frame, (box_x + 2 + left_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width, box_y + 38), (0, 255, 0), -1)
+        cv2.rectangle(frame, (box_x + 2 + left_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width, box_y + 38),(255, 0, 0), -1)
         # right rectangle
-        cv2.rectangle(frame, (box_x + 2 + left_rect_width + middle_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width + right_rect_width, box_y + 38), (255, 0, 0), -1)
+        cv2.rectangle(frame, (box_x + 2 + left_rect_width + middle_rect_width, box_y + 2), (box_x + 2 + left_rect_width + middle_rect_width + right_rect_width, box_y + 38), (0, 255, 0), -1)
 
         # Add text labels in the middle of each box
         text_y = box_y + 25  # Center vertically in the box
@@ -388,9 +389,72 @@ class Analyzer:
 
 
     def draw_shot_speed_distribution(self, frame, frame_number):
-        shots = self.shots
-        if not shots:
+        """
+        Draw a bell curve distribution of shot speeds on the frame.
+        """
+        if not hasattr(self, 'shots') or not self.shots:
             return
+            
+        # Extract shot speeds
+        shot_speeds = [shot['peak_kmh'] for shot in self.shots]
+        if len(shot_speeds) < 2:
+            return
+            
+        # Create histogram data for bell curve
+        speeds = np.array(shot_speeds)
+        min_speed = np.min(speeds)
+        max_speed = np.max(speeds)
+        
+        # Create bins for the histogram
+        num_bins = 10
+        bins = np.linspace(min_speed, max_speed, num_bins + 1)
+        hist, _ = np.histogram(speeds, bins=bins)
+        
+        # Normalize histogram to create probability distribution
+        hist_normalized = hist / np.sum(hist) if np.sum(hist) > 0 else hist
+        
+        # Position and size of the distribution chart
+        chart_x = self.analysis_box_x1 + 20
+        chart_y = self.analysis_box_y1 + 230
+        chart_width = 260
+        chart_height = 80
+        
+        # Draw background rectangle
+        cv2.rectangle(frame, (chart_x, chart_y), (chart_x + chart_width, chart_y + chart_height), (30, 30, 30), -1)
+        cv2.rectangle(frame, (chart_x, chart_y), (chart_x + chart_width, chart_y + chart_height), (255, 255, 255), 2)
+        
+        # Draw title
+        cv2.putText(frame, "Speed Distribution", (chart_x - 10, chart_y - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)   
+        
+        # Draw the bell curve as bars, keeping bars within the chart box
+        margin = 10  # margin on each side
+        usable_width = chart_width - 2 * margin
+        bar_width = max(2, usable_width // num_bins)
+        for i in range(num_bins):
+            if hist_normalized[i] > 0:
+                bar_height = int(hist_normalized[i] * (chart_height - 20))
+                bar_x = chart_x + margin + i * bar_width
+                bar_y = chart_y + chart_height - bar_height - 10
+                # Color based on speed range (red for slow, green for fast)
+                speed_ratio = (bins[i] - min_speed) / (max_speed - min_speed) if max_speed > min_speed else 0
+                color = (int(255 * (1 - speed_ratio)), int(255 * speed_ratio), 100)
+                cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_width - 2, chart_y + chart_height - 10), color, -1)
+        
+        # Draw speed labels on x-axis
+        for i in range(0, num_bins + 1, 2):  # Every other bin to avoid crowding
+            speed_label = f"{bins[i]:.0f}"
+            label_x = chart_x + i * bar_width - 10
+            cv2.putText(frame, speed_label, (label_x, chart_y + chart_height + 15), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+        
+        # Draw statistics
+        mean_speed = np.mean(speeds)
+        std_speed = np.std(speeds)
+        stats_text = f"Mean: {mean_speed:.1f} km/h, Std: {std_speed:.1f}"
+        cv2.putText(frame, stats_text, (chart_x + 5, chart_y + chart_height + 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        
         return 
 
               
@@ -400,6 +464,7 @@ class Analyzer:
             self.draw_box(frame, overlay_start_x, overlay_start_y)
             self.draw_shot_speed(frame, i)  
             self.draw_shot_placement_distribution(frame, i)
+            self.draw_shot_speed_distribution(frame, i)
             output_frames.append(frame)
         return output_frames
 
