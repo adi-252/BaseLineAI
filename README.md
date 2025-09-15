@@ -1,4 +1,4 @@
-# BaseLine AI - Computer Vision Tennis Analysis Tool
+# Baseline AI - Computer Vision Tennis Analysis Tool
 
 BaseLine AI is an advanced computer vision toolkit for automated tennis match analysis.
 
